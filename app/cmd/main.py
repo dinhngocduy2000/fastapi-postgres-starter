@@ -1,43 +1,54 @@
+from typing import Callable
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.controller.test_controller import TestController
 from app.core.config import settings
-from app.api.v1.api import api_router
+from app.core.database import create_pg_engine
+from loguru import logger
 
-app = FastAPI(
-    title=settings.APP_NAME,
-    version=settings.APP_VERSION,
-    openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
-    docs_url=f"{settings.API_V1_PREFIX}/docs",
-    redoc_url=f"{settings.API_V1_PREFIX}/redoc",
-)
-
-# Set up CORS
-if settings.BACKEND_CORS_ORIGINS:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+from app.handlers.test_handler import TestHandler
+from app.repository.registry import Registry
+from app.routes.test_router import TestRoute
 
 
-@app.get("/")
-async def root():
-    """Root endpoint"""
-    return {
-        "message": "Welcome to FastAPI PostgreSQL Starter",
-        "version": settings.APP_VERSION,
-        "docs": f"{settings.API_V1_PREFIX}/docs"
-    }
+class App:
+    application: FastAPI
+
+    def on_init_app(self) -> Callable:
+        async def start_app() -> None:
+            pg_engine = create_pg_engine()
+            registry = Registry(pg_engine)
+            # --------------- START OF TEST SERVICES ---------------
+            test_controller = TestController(registry)
+            test_handler = TestHandler(test_controller)
+            test_router = TestRoute(test_handler)
+            self.application.include_router(
+                test_router.router,
+                prefix=settings.API_V1_PREFIX,
+                tags=["api"],
+            )
+            # --------------- END OF TEST SERVICES ---------------
+
+        return start_app
+
+    def on_terminate_app(self) -> Callable:
+        @logger.catch
+        async def stop_app() -> None:
+            pass
+
+        return stop_app
+
+    def __init__(self) -> None:
+        self.application = FastAPI(**settings.fastapi_kwargs)
+        self.application.add_middleware(
+            CORSMiddleware,
+            allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        self.application.add_event_handler("startup", self.on_init_app())
+        self.application.add_event_handler("shutdown", self.on_terminate_app())
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy"}
-
-
-# Include API router
-app.include_router(api_router, prefix=settings.API_V1_PREFIX)
-
+app = App().application

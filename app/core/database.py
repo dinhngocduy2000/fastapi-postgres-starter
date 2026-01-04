@@ -1,39 +1,21 @@
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import declarative_base
-from app.core.config import settings
+from sqlalchemy.ext.asyncio import create_async_engine
 
-# Create async engine
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=settings.DEBUG,
-    future=True,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20
-)
-
-# Create async session factory
-AsyncSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autocommit=False,
-    autoflush=False
-)
-
-# Base class for models
-Base = declarative_base()
+from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine, AsyncAttrs
 
 
-async def get_db():
-    """Dependency for getting async database session"""
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+from app.core.config import settings as st
 
+
+class Base(AsyncAttrs, DeclarativeBase):
+    pass
+
+
+def create_pg_engine() -> AsyncEngine:
+    engine = create_async_engine(
+        st.DATABASE_URL,
+        pool_size=st.POOL_SIZE,
+        max_overflow=st.MAX_OVERFLOW,
+        pool_recycle=st.POOL_RECYCLE,
+    )
+    return engine
